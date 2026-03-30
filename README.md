@@ -1,6 +1,10 @@
 # www
 
-This template should help get you started developing with Vue 3 in Vite.
+This project uses Vue 3 with Vite.
+
+Package manager: **pnpm**
+
+Please use `pnpm` commands for install, development, build, and linting. Do **not** use `npm` for this repository.
 
 ## Recommended IDE Setup
 
