@@ -1,6 +1,8 @@
 # www
 
-This template should help get you started developing with Vue 3 in Vite.
+Temporary website for Organization Tools, built with Vue 3 and Vite.
+
+This repository uses `pnpm` for dependency management. Use `pnpm` commands throughout the project and do not create or commit `package-lock.json`.
 
 ## Recommended IDE Setup
 
