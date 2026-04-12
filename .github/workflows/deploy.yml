@@ -9,10 +9,17 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: 🛒 Checkout repository
         uses: actions/checkout@v5
+
+      - name: 📝 Create .env
+        shell: bash
+        env:
+          ENV_FILE: ${{ secrets.ENV }}
+        run: |
+          printf '%s' "$ENV" > .env
+          test -f .env
 
       - name: 📦 Build project
         run: |
@@ -47,7 +54,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ vars.SSH_PORT }}
           source: ${{ steps.meta.outputs.dist_name }}
-          target: "~/"
+          target: '~/'
 
       - name: 🚀 Deploy ${{ steps.meta.outputs.project_name }}
         uses: appleboy/ssh-action@v1
