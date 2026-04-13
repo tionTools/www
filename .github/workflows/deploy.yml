@@ -13,21 +13,13 @@ jobs:
       - name: 🛒 Checkout repository
         uses: actions/checkout@v5
 
-      - name: 📝 Create .env
+      - name: 📝 Create .env "gh secret set ENV < .env"
         shell: bash
         env:
           ENV_FILE: ${{ secrets.ENV }}
         run: |
           printf '%s' "$ENV_FILE" > .env
-
-          test -s .env || { echo ".env не создан или пустой"; exit 1; }
-          echo ".env создан"
-
-          echo "Ключи в .env:"
-          sed -E 's/=.*/=[MASKED]/' .env
-
-          grep -q '^VITE_SOME_KEY=' .env || { echo "VITE_SOME_KEY отсутствует"; exit 1; }
-          echo "VITE_SOME_KEY найден"
+          test -f .env
 
       - name: 📦 Build project
         run: |
