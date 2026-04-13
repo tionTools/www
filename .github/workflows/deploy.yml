@@ -16,10 +16,18 @@ jobs:
       - name: 📝 Create .env
         shell: bash
         env:
-          ENV_FILE: ${{ secrets.ENV }}
+          ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
-          printf '%s' "$ENV" > .env
-          test -f .env
+          printf '%s' "$ENV_FILE" > .env
+
+          test -s .env || { echo ".env не создан или пустой"; exit 1; }
+          echo ".env создан"
+
+          echo "Ключи в .env:"
+          sed -E 's/=.*/=[MASKED]/' .env
+
+          grep -q '^VITE_SOME_KEY=' .env || { echo "VITE_SOME_KEY отсутствует"; exit 1; }
+          echo "VITE_SOME_KEY найден"
 
       - name: 📦 Build project
         run: |
