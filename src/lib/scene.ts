@@ -1,8 +1,40 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Vec3 = { x: number; y: number; z: number };
-type SignalState = "moving" | "paused" | "impact";
-type Direction = 1 | -1;
+export type Vec3 = { x: number; y: number; z: number };
+export type Direction = 1 | -1;
+export type SignalState = "moving" | "paused" | "impact";
+
+export interface Path {
+  id: number;
+  nodes: Vec3[];
+  segLengths: number[];
+  totalLength: number;
+  color: string;
+  thickness: number;
+  opacity: number;
+  active: boolean;
+  diagonal: boolean;
+}
+
+export interface Signal {
+  id: number;
+  pathId: number;
+  segIndex: number;
+  progress: number;
+  direction: Direction;
+  speed: number;
+  colorFwd: string;
+  colorBwd: string;
+  tailLength: number;
+  pauseDuration: number;
+  pauseTime: number;
+  state: SignalState;
+}
+
+export interface SceneData {
+  paths: Path[];
+  signals: Signal[];
+}
 
 interface Projected {
   sx: number;
@@ -18,33 +50,6 @@ interface Camera {
   panX: number;
   panY: number;
   distance: number;
-}
-
-interface Path {
-  id: number;
-  nodes: Vec3[];
-  segLengths: number[];
-  totalLength: number;
-  color: string;
-  thickness: number;
-  opacity: number;
-  active: boolean;
-  diagonal: boolean;
-}
-
-interface Signal {
-  id: number;
-  pathId: number;
-  segIndex: number;
-  progress: number;
-  direction: Direction;
-  speed: number;
-  colorFwd: string;
-  colorBwd: string;
-  tailLength: number;
-  pauseDuration: number;
-  pauseTime: number;
-  state: SignalState;
 }
 
 interface ImpactEffect {
@@ -73,8 +78,24 @@ interface SceneState {
 
 // ─── Math ─────────────────────────────────────────────────────────────────────
 
-function v3(x: number, y: number, z: number): Vec3 {
+export function v3(x: number, y: number, z: number): Vec3 {
   return { x, y, z };
+}
+
+export function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+export function rng(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
+export function snap(v: number, g: number): number {
+  return Math.round(v / g) * g;
+}
+
+export function pickRandom<T>(arr: [T, ...T[]]): T {
+  return arr[Math.floor(Math.random() * arr.length)] ?? arr[0];
 }
 
 function dist3(a: Vec3, b: Vec3): number {
@@ -88,20 +109,28 @@ function lerp3(a: Vec3, b: Vec3, t: number): Vec3 {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t };
 }
 
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
-}
+// ─── Path builder ─────────────────────────────────────────────────────────────
 
-function rng(min: number, max: number): number {
-  return min + Math.random() * (max - min);
-}
-
-function snap(v: number, g: number): number {
-  return Math.round(v / g) * g;
-}
-
-function pickRandom<T>(arr: [T, ...T[]]): T {
-  return arr[Math.floor(Math.random() * arr.length)] ?? arr[0];
+export function buildPath(
+  id: number,
+  nodes: Vec3[],
+  color: string,
+  thickness: number,
+  opacity: number,
+  active: boolean,
+  diagonal: boolean = false,
+): Path {
+  const segLengths: number[] = [];
+  let total = 0;
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const a = nodes[i];
+    const b = nodes[i + 1];
+    if (!a || !b) continue;
+    const d = dist3(a, b);
+    segLengths.push(d);
+    total += d;
+  }
+  return { id, nodes, segLengths, totalLength: total, color, thickness, opacity, active, diagonal };
 }
 
 // ─── Projection ───────────────────────────────────────────────────────────────
@@ -161,160 +190,6 @@ function rgba(hex: string, alpha: number): string {
 
 function depthFade(depth: number): number {
   return clamp(1.0 - (depth - 250) / 1400, 0.04, 1.0);
-}
-
-// ─── Path builder ─────────────────────────────────────────────────────────────
-
-function buildPath(
-  id: number,
-  nodes: Vec3[],
-  color: string,
-  thickness: number,
-  opacity: number,
-  active: boolean,
-  diagonal: boolean = false,
-): Path {
-  const segLengths: number[] = [];
-  let total = 0;
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const a = nodes[i];
-    const b = nodes[i + 1];
-    if (!a || !b) continue;
-    const d = dist3(a, b);
-    segLengths.push(d);
-    total += d;
-  }
-  return { id, nodes, segLengths, totalLength: total, color, thickness, opacity, active, diagonal };
-}
-
-// ─── Scene generation ─────────────────────────────────────────────────────────
-
-function generateScene(): SceneState {
-  const GRID = 50;
-  const W = 520,
-    H = 160,
-    D = 520;
-  const paths: Path[] = [];
-  let id = 0;
-
-  const infraColors: [string, ...string[]] = [
-    "#0a2040",
-    "#0d2a50",
-    "#091a34",
-    "#0f2244",
-    "#071528",
-  ];
-  const activeColors: [string, ...string[]] = [
-    "#00e5ff",
-    "#18ffff",
-    "#00bcd4",
-    "#4dd0e1",
-    "#76ff03",
-    "#69f000",
-    "#00e676",
-    "#1de9b6",
-  ];
-  const particleColor = "#8ab4cc";
-
-  function makeCircuitPath(active: boolean): Vec3[] {
-    const nodes: Vec3[] = [];
-    const cx = snap(rng(-W / 2, W / 2), GRID);
-    const cy = snap(rng(-H / 2, H / 2), GRID / 2);
-    const cz = snap(rng(-D / 2, D / 2), GRID);
-    nodes.push(v3(cx, cy, cz));
-
-    const steps = active ? Math.floor(rng(2, 7)) : Math.floor(rng(1, 5));
-    for (let s = 0; s < steps; s++) {
-      const axis = Math.floor(rng(0, 3));
-      const mag = snap(rng(GRID, GRID * (active ? 4 : 5)), GRID);
-      const sign = Math.random() < 0.5 ? 1 : -1;
-      const prev = nodes.at(-1);
-      if (!prev) continue;
-      let nx = prev.x,
-        ny = prev.y,
-        nz = prev.z;
-      if (axis === 0) nx = clamp(nx + mag * sign, -W / 2, W / 2);
-      else if (axis === 1) ny = clamp(ny + mag * sign * 0.4, -H / 2, H / 2);
-      else nz = clamp(nz + mag * sign, -D / 2, D / 2);
-      if (nx !== prev.x || ny !== prev.y || nz !== prev.z) nodes.push(v3(nx, ny, nz));
-    }
-    if (nodes.length < 2) {
-      const first = nodes[0];
-      if (first) nodes.push(v3(first.x + GRID, first.y, first.z));
-    }
-    return nodes;
-  }
-
-  for (let i = 0; i < 110; i++) {
-    const nodes = makeCircuitPath(false);
-    const color = pickRandom(infraColors);
-    paths.push(buildPath(id++, nodes, color, rng(0.3, 0.9), rng(0.1, 0.32), false));
-  }
-
-  for (let i = 0; i < 55; i++) {
-    const nodes = makeCircuitPath(true);
-    const color = pickRandom(activeColors);
-    paths.push(buildPath(id++, nodes, color, rng(0.4, 1.4), rng(0.4, 0.85), true));
-  }
-
-  for (let i = 0; i < 40; i++) {
-    const ox = rng(-W / 2, W / 2);
-    const oy = rng(-H / 2, H / 2);
-    const oz = rng(-D / 2, D / 2);
-    const angle = rng(0, Math.PI * 2);
-    const tilt = rng(-0.6, 0.6);
-    const len = rng(30, 180);
-    const ex = ox + Math.cos(angle) * len;
-    const ey = oy + tilt * len * 0.4;
-    const ez = oz + Math.sin(angle) * len;
-    paths.push(
-      buildPath(
-        id++,
-        [v3(ox, oy, oz), v3(ex, ey, ez)],
-        particleColor,
-        rng(0.2, 0.7),
-        rng(0.08, 0.22),
-        false,
-        true,
-      ),
-    );
-  }
-
-  const signals: Signal[] = [];
-  let sid = 0;
-  for (const path of paths) {
-    if (!path.active || path.nodes.length < 2) continue;
-    if (Math.random() > 0.72) continue;
-
-    const color = path.color;
-    signals.push({
-      id: sid++,
-      pathId: path.id,
-      segIndex: Math.floor(rng(0, path.nodes.length - 1)),
-      progress: Math.random(),
-      direction: 1,
-      speed: rng(35, 130),
-      colorFwd: color,
-      colorBwd: color,
-      tailLength: rng(0.07, 0.28),
-      pauseDuration: rng(0.1, 0.7),
-      pauseTime: 0,
-      state: "moving",
-    });
-  }
-
-  const pathMap = new Map<number, Path>();
-  for (const p of paths) pathMap.set(p.id, p);
-
-  return {
-    paths,
-    pathMap,
-    signals,
-    impacts: [],
-    camera: { yaw: -0.45, pitch: 0.38, zoom: 1.0, panX: 0, panY: 0, distance: 720 },
-    input: { rotating: false, panning: false, lastX: 0, lastY: 0 },
-    time: 0,
-  };
 }
 
 // ─── Signal helpers ───────────────────────────────────────────────────────────
@@ -482,12 +357,7 @@ function drawPaths(ctx: CanvasRenderingContext2D, scene: SceneState, cx: number,
   }
 }
 
-function drawSignals(
-  ctx: CanvasRenderingContext2D,
-  scene: SceneState,
-  cx: number,
-  cy: number,
-): void {
+function drawSignals(ctx: CanvasRenderingContext2D, scene: SceneState, cx: number, cy: number) {
   const { signals, pathMap, camera } = scene;
 
   for (const sig of signals) {
@@ -551,7 +421,7 @@ function drawImpactEffects(
   scene: SceneState,
   cx: number,
   cy: number,
-): void {
+) {
   const { impacts, camera } = scene;
 
   for (const impact of impacts) {
@@ -689,7 +559,7 @@ function setupInput(canvas: HTMLCanvasElement, scene: SceneState): () => void {
 
 // ─── Main loop ────────────────────────────────────────────────────────────────
 
-export function main(canvas: HTMLCanvasElement): () => void {
+export function main(canvas: HTMLCanvasElement, data?: SceneData): () => void {
   const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -713,7 +583,22 @@ export function main(canvas: HTMLCanvasElement): () => void {
   resize();
   window.addEventListener("resize", resize);
 
-  const scene = generateScene();
+  const paths = data?.paths ?? [];
+  const signals = data?.signals ?? [];
+
+  const pathMap = new Map<number, Path>();
+  for (const p of paths) pathMap.set(p.id, p);
+
+  const scene: SceneState = {
+    paths,
+    pathMap,
+    signals,
+    impacts: [],
+    camera: { yaw: -0.45, pitch: 0.38, zoom: 1.0, panX: 0, panY: 0, distance: 720 },
+    input: { rotating: false, panning: false, lastX: 0, lastY: 0 },
+    time: 0,
+  };
+
   const cleanupInput = setupInput(canvas, scene);
 
   let rafId: number;
